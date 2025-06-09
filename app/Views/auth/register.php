@@ -12,18 +12,6 @@
     <link rel="stylesheet" href="/assets/css/auth.css">
 </head>
 <body>
-    <header>
-        <nav class="navbar navbar-expand navbar-light bg-white px-3">
-            <div class="container-fluid">
-                <img src="/assets/images/logo/Air-TechLogo.png" alt="Logo" class="rounded-circle me-2" width="40" height="40">
-                <a class="navbar-brand" href="/">AIR<span class="brand-red">PROTECH</span></a>
-                <div class="navbar-nav ms-auto">
-                   
-                </div>
-            </div>
-        </nav>
-    </header>
-
     <div class="main-content py-4">
         <div class="container">
             <div class="auth-container">
@@ -136,27 +124,6 @@
             </div>
         </div>
     </div>
-
-    <footer class="py-3">
-        <div class="container">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    © 2025 AirProtech Aircon. All rights reserved.
-                </div>
-                <div class="d-flex">
-                    <a href="#" class="me-3">Privacy Policy</a>
-                    <a href="#" class="me-3">Terms of Service</a>
-                    <a href="#">Help</a>
-                </div>
-                <div class="social-icons">
-                    <a href="#"><i class="fab fa-twitter"></i></a>
-                    <a href="#"><i class="fab fa-facebook"></i></a>
-                    <a href="#"><i class="fab fa-instagram"></i></a>
-                    <a href="#"><i class="fab fa-linkedin"></i></a>
-                </div>
-            </div>
-        </div>
-    </footer>
 
     <script>
         function showToast(title, message, type = 'success') {
