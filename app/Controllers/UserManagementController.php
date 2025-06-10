@@ -126,12 +126,11 @@ class UserManagementController extends BaseController
     }
     
 
-    private function hasUppercase(string $password): bool {
-        return preg_match('/[A-Z]/', $password) === 1;
-    }
-    
-    private function hasLowercase(string $password): bool {
-        return preg_match('/[a-z]/', $password) === 1;
+    private function isStrongPassword(string $password): bool {
+        return strlen($password) >= 8 &&
+            preg_match('/[A-Z]/', $password) &&
+            preg_match('/[a-z]/', $password) &&
+            preg_match('/[0-9]/', $password);
     }
 
     // API Endpoint: Create a new user
@@ -163,14 +162,11 @@ class UserManagementController extends BaseController
 
         $password = $data['password'];
 
-        // Validate password length
-        if (strlen($password) < 8) {
-            return $this->jsonError('Password must be at least 8 characters long.');
-        }
-
-        // Validate password strength (uppercase and lowercase)
-        if (!$this->hasUppercase($password) || !$this->hasLowercase($password)) {
-            return $this->jsonError('Password must contain both uppercase and lowercase letters.');
+        // Validate Password Strength
+        if (!$this->isStrongPassword($password)) {
+            return $this->jsonError(
+                'Password must be at least 8 characters and include uppercase, lowercase, and number.'
+            );
         }
 
         $profileUrl = $avatar->generate($data['first_name'] . ' ' . $data['last_name']);

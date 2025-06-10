@@ -116,12 +116,11 @@ class AuthController extends BaseController
         );
     }
 
-    private function hasUppercase(string $password): bool {
-        return preg_match('/[A-Z]/', $password) === 1;
-    }
-    
-    private function hasLowercase(string $password): bool {
-        return preg_match('/[a-z]/', $password) === 1;
+    private function isStrongPassword(string $password): bool {
+        return strlen($password) >= 8 &&
+            preg_match('/[A-Z]/', $password) &&
+            preg_match('/[a-z]/', $password) &&
+            preg_match('/[0-9]/', $password);
     }
 
     public function registerAccount() 
@@ -164,14 +163,11 @@ class AuthController extends BaseController
             return $this->jsonError('Passwords do not match');
         }
 
-        // Validate password length
-        if (strlen($password) < 8) {
-            return $this->jsonError('Password must be at least 8 characters long.');
-        }
-
-        // Validate password strength (uppercase and lowercase)
-        if (!$this->hasUppercase($password) || !$this->hasLowercase($password)) {
-            return $this->jsonError('Password must contain both uppercase and lowercase letters.');
+        // Validate Password Strength
+        if (!$this->isStrongPassword($password)) {
+            return $this->jsonError(
+                'Password must be at least 8 characters and include uppercase, lowercase, and number.'
+            );
         }
 
         // Create the user

@@ -123,13 +123,12 @@ class UserController extends BaseController{
         }
     }
 
-    private function hasUppercase(string $password): bool {
-        return preg_match('/[A-Z]/', $password) === 1;
+    private function isStrongPassword(string $password): bool {
+        return strlen($password) >= 8 &&
+            preg_match('/[A-Z]/', $password) &&
+            preg_match('/[a-z]/', $password) &&
+            preg_match('/[0-9]/', $password);
     }
-    
-    private function hasLowercase(string $password): bool {
-        return preg_match('/[a-z]/', $password) === 1;
-    }    
     
     public function updatePassword() {
         if (!$this->isAjax()) {
@@ -153,14 +152,11 @@ class UserController extends BaseController{
             return $this->jsonError('Password and confirmation do not match', 400);
         }
 
-        // Validate password length
-        if (strlen($data['new_password']) < 8) {
-            return $this->jsonError('Password must be at least 8 characters long.', 400);
-        }
-
-        // Validate password strength
-        if (!$this->hasUppercase($data['new_password']) || !$this->hasLowercase($data['new_password'])) {
-            return $this->jsonError('Password must contain both uppercase and lowercase letters.', 400);
+        // Validate Password Strength
+        if (!$this->isStrongPassword($data['new_password'])) {
+            return $this->jsonError(
+                'Password must be at least 8 characters and include uppercase, lowercase, and number.'
+            );
         }
         
         // Get user data to verify current password
