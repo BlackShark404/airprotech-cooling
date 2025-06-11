@@ -83,7 +83,7 @@
                                             <i class="fas fa-eye"></i>
                                         </button>
                                     </div>
-                                    <div class="form-text mt-2">Password must be at least 8 characters and include uppercase, lowercase, number and special character.</div>
+                                    <div class="form-text mt-2">Password must be at least 8 characters and include uppercase, lowercase, and number.</div>
                                 </div>
                                 <div class="mb-3">
                                     <label for="confirmPassword" class="form-label">Confirm Password</label>
