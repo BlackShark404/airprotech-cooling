@@ -484,25 +484,90 @@ class InventoryController extends BaseController
 
     public function deleteInventory($id)
     {
-        if (!$this->isAjax()) {
+        if (!$this->isAjax() || !$this->isPost()) {
             $this->renderError('Bad Request', 400);
             return;
         }
 
-        // First check if the inventory item exists
-        $inventoryItem = $this->inventoryModel->getInventoryById($id);
-        if (!$inventoryItem) {
-            $this->jsonError('Inventory item not found', 404);
+        // Check if inventory exists
+        $inventory = $this->inventoryModel->getInventoryById($id);
+        if (!$inventory) {
+            $this->jsonError('Inventory record not found', 404);
             return;
         }
 
-        // Attempt to delete the inventory item
+        // Delete inventory
         $result = $this->inventoryModel->deleteInventory($id);
         
         if ($result) {
-            $this->jsonSuccess([], 'Inventory record deleted successfully');
+            $this->jsonSuccess(null, 'Inventory record deleted successfully');
         } else {
             $this->jsonError('Failed to delete inventory record', 500);
         }
+    }
+    
+    /**
+     * Get warehouses with available inventory for a specific variant
+     * Used for warehouse selection in product booking
+     */
+    public function getVariantWarehouses()
+    {
+        if (!$this->isAjax()) {
+            $this->renderError('Bad Request', 400);
+            return;
+        }
+        
+        // Get variant ID and required quantity
+        $variantId = intval($this->request('variant_id'));
+        $requiredQuantity = intval($this->request('quantity', 1));
+        
+        if (!$variantId) {
+            $this->jsonError('Missing required parameter: variant_id', 400);
+            return;
+        }
+        
+        // Validate required quantity is positive
+        if ($requiredQuantity <= 0) {
+            $this->jsonError('Quantity must be greater than zero', 400);
+            return;
+        }
+        
+        // Get all warehouses
+        $warehouses = $this->warehouseModel->getAllWarehouses();
+        
+        if (empty($warehouses)) {
+            $this->jsonSuccess([]);
+            return;
+        }
+        
+        // Build result array with inventory information
+        $result = [];
+        
+        foreach ($warehouses as $warehouse) {
+            $warehouseId = isset($warehouse['WHOUSE_ID']) ? $warehouse['WHOUSE_ID'] : $warehouse['whouse_id'];
+            $warehouseName = isset($warehouse['WHOUSE_NAME']) ? $warehouse['WHOUSE_NAME'] : $warehouse['whouse_name'];
+            
+            // Get inventory for this variant in this warehouse
+            $inventory = $this->inventoryModel->getInventoryByProductAndWarehouse($variantId, $warehouseId, 'Regular');
+            
+            $availableQuantity = 0;
+            if ($inventory) {
+                $availableQuantity = isset($inventory['QUANTITY']) ? intval($inventory['QUANTITY']) : intval($inventory['quantity'] ?? 0);
+            }
+            
+            $result[] = [
+                'whouse_id' => $warehouseId,
+                'whouse_name' => $warehouseName,
+                'available_quantity' => $availableQuantity,
+                'has_enough' => $availableQuantity >= $requiredQuantity
+            ];
+        }
+        
+        // Sort warehouses by available quantity (descending)
+        usort($result, function($a, $b) {
+            return $b['available_quantity'] - $a['available_quantity'];
+        });
+        
+        $this->jsonSuccess($result);
     }
 } 

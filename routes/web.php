@@ -112,6 +112,7 @@ $router->map('GET', '/api/inventory/summary', 'App\Controllers\InventoryControll
 $router->map('POST', '/api/inventory/add-stock', 'App\Controllers\InventoryController#addStock', 'add_stock');
 $router->map('POST', '/api/inventory/move-stock', 'App\Controllers\InventoryController#moveStock', 'move_stock');
 $router->map('DELETE', '/api/inventory/[i:id]', 'App\Controllers\InventoryController#deleteInventory', 'delete_inventory');
+$router->map('GET', '/api/inventory/variant-warehouses', 'App\Controllers\InventoryController#getVariantWarehouses', 'get_variant_warehouses');
 
 // Warehouse API Routes
 $router->map('GET', '/api/warehouses', 'App\Controllers\WarehouseController#getAllWarehouses', 'get_all_warehouses');

@@ -275,7 +275,7 @@ class UserController extends BaseController{
             return $this->jsonError('User not authenticated', 401);
         }
         
-        $userId = $_SESSION['user_id'];
+        $userId = $_SESSION['user_id'];      
         
         try {
             $statistics = $this->userModel->getCustomerStatistics($userId);

@@ -207,6 +207,11 @@ class ProductBookingModel extends Model
             $setClauses[] = "PB_DESCRIPTION = :description";
             $params[':description'] = $data['PB_DESCRIPTION'];
         }
+        
+        if (isset($data['PB_WAREHOUSE_ID'])) {
+            $setClauses[] = "PB_WAREHOUSE_ID = :warehouse_id";
+            $params[':warehouse_id'] = $data['PB_WAREHOUSE_ID'];
+        }
 
         if (empty($setClauses)) {
             return false; // No fields to update

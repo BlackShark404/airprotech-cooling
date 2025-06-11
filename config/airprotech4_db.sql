@@ -235,6 +235,7 @@ CREATE TABLE PRODUCT_BOOKING (
     PB_UNIT_PRICE       DECIMAL(10, 2) NOT NULL,
     PB_TOTAL_AMOUNT     DECIMAL(10, 2) GENERATED ALWAYS AS (PB_QUANTITY * PB_UNIT_PRICE) STORED,
     PB_STATUS           VARCHAR(20) DEFAULT 'pending',
+    PB_INVENTORY_DEDUCTED BOOLEAN DEFAULT FALSE,
     PB_WAREHOUSE_ID     INT,  -- The warehouse from which the products will be taken
 
     -- free_install → VAR_PRICE_FREE_INSTALL
@@ -259,7 +260,7 @@ CREATE TABLE PRODUCT_BOOKING (
     CONSTRAINT FK_BOOKING_WAREHOUSE FOREIGN KEY (PB_WAREHOUSE_ID)
         REFERENCES WAREHOUSE(WHOUSE_ID) ON DELETE RESTRICT ON UPDATE CASCADE,
         
-    CONSTRAINT CK_BOOKING_STATUS CHECK (PB_STATUS IN ('pending', 'confirmed', 'completed', 'cancelled'))
+    CONSTRAINT CK_BOOKING_STATUS CHECK (PB_STATUS IN ('pending', 'confirmed', 'in-progress', 'completed', 'cancelled'))
 );
 
 
@@ -287,14 +288,9 @@ CREATE TABLE PRODUCT_ASSIGNMENT (
 );
 
 
-
 -- --------------------------------------
 -- 4. Inventory Management Tables
 -- --------------------------------------
--- WAREHOUSE Table: Stores warehouse information
-
-
-
 -- INVENTORY Table: Tracks product stock in warehouses
 CREATE TABLE INVENTORY (
     INVE_ID         SERIAL PRIMARY KEY,
@@ -350,41 +346,61 @@ DECLARE
     available_quantity INT;
     warehouse_id INT;
 BEGIN
-    -- Only proceed if status is being set to 'confirmed'
-    IF (NEW.PB_STATUS = 'confirmed' AND (OLD.PB_STATUS != 'confirmed' OR OLD.PB_STATUS IS NULL)) THEN
-        -- Get the first warehouse that has the product variant in stock
-        -- This is a simplified approach; in a real system, you might want to specify which warehouse to use
-        SELECT WHOUSE_ID, QUANTITY INTO warehouse_id, available_quantity
-        FROM INVENTORY
-        WHERE VAR_ID = NEW.PB_VARIANT_ID AND QUANTITY >= NEW.PB_QUANTITY AND INVE_DELETED_AT IS NULL
-        LIMIT 1;
-        
-        -- Check if we found a warehouse with enough stock
-        IF warehouse_id IS NULL THEN
-            RAISE EXCEPTION 'Not enough inventory available for product variant ID %', NEW.PB_VARIANT_ID;
+    -- Proceed only if:
+    -- (a) New status is 'confirmed'
+    -- (b) Was not already confirmed OR inventory not deducted yet
+    IF (
+        NEW.PB_STATUS = 'confirmed' AND 
+        NEW.PB_INVENTORY_DEDUCTED = FALSE
+    ) THEN
+        -- If PB_WAREHOUSE_ID was specified, use it
+        IF NEW.PB_WAREHOUSE_ID IS NOT NULL THEN
+            SELECT QUANTITY INTO available_quantity
+            FROM INVENTORY
+            WHERE VAR_ID = NEW.PB_VARIANT_ID
+              AND WHOUSE_ID = NEW.PB_WAREHOUSE_ID
+              AND QUANTITY >= NEW.PB_QUANTITY
+              AND INVE_DELETED_AT IS NULL;
+
+            IF available_quantity IS NULL THEN
+                RAISE EXCEPTION 'Warehouse ID % does not have enough stock for variant ID %',
+                    NEW.PB_WAREHOUSE_ID, NEW.PB_VARIANT_ID;
+            END IF;
+
+            warehouse_id := NEW.PB_WAREHOUSE_ID;
+        ELSE
+            -- Auto-select any warehouse with sufficient inventory
+            SELECT WHOUSE_ID, QUANTITY INTO warehouse_id, available_quantity
+            FROM INVENTORY
+            WHERE VAR_ID = NEW.PB_VARIANT_ID
+              AND QUANTITY >= NEW.PB_QUANTITY
+              AND INVE_DELETED_AT IS NULL
+            LIMIT 1;
+
+            IF warehouse_id IS NULL THEN
+                RAISE EXCEPTION 'No warehouse has enough stock for product variant ID %',
+                    NEW.PB_VARIANT_ID;
+            END IF;
+
+            NEW.PB_WAREHOUSE_ID := warehouse_id;
         END IF;
-        
-        -- Update the inventory quantity
+
+        -- Deduct inventory
         UPDATE INVENTORY
         SET QUANTITY = QUANTITY - NEW.PB_QUANTITY,
             INVE_UPDATED_AT = CURRENT_TIMESTAMP
-        WHERE VAR_ID = NEW.PB_VARIANT_ID 
-          AND WHOUSE_ID = warehouse_id
+        WHERE VAR_ID = NEW.PB_VARIANT_ID
+          AND WHOUSE_ID = NEW.PB_WAREHOUSE_ID
           AND INVE_DELETED_AT IS NULL;
-          
-        -- Update the booking record with the warehouse ID
-        NEW.PB_WAREHOUSE_ID = warehouse_id;
-          
-        -- Update customer statistics
-        UPDATE CUSTOMER
-        SET CU_PRODUCT_ORDERS = CU_PRODUCT_ORDERS + 1,
-            CU_UPDATED_AT = CURRENT_TIMESTAMP
-        WHERE CU_ACCOUNT_ID = NEW.PB_CUSTOMER_ID;
+
+        -- Mark as deducted
+        NEW.PB_INVENTORY_DEDUCTED := TRUE;
     END IF;
-    
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
 
 -- Create the trigger
 CREATE TRIGGER deduct_inventory_after_booking_confirmation

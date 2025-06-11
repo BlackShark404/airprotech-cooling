@@ -398,6 +398,18 @@ ob_start();
                         </div>
                     </div>
                     
+                    <!-- Warehouse Selection -->
+                    <div class="row mb-3" id="warehouse-selection-container">
+                        <div class="col-12">
+                            <label for="edit-warehouse-id" class="form-label">Warehouse (for inventory deduction)</label>
+                            <select id="edit-warehouse-id" name="warehouseId" class="form-select">
+                                <option value="auto" selected>Auto-select warehouse (Default)</option>
+                                <!-- Warehouses will be populated via AJAX -->
+                            </select>
+                            <small class="text-muted">Only warehouses with sufficient inventory are enabled. Inventory will be deducted when status is set to "Confirmed".</small>
+                        </div>
+                    </div>
+                    
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="edit-delivery-date" class="form-label">Delivery Date</label>
@@ -885,6 +897,30 @@ function editProductBooking(rowData) {
                 updateTotalAmount(data);
             });
             
+            // Add event listener for status changes to handle warehouse visibility
+            $('#edit-status').off('change').on('change', function() {
+                const selectedStatus = $(this).val();
+                const warehouseContainer = $('#warehouse-selection-container');
+                
+                // Show warehouse selection only if status is 'pending' or 'confirmed'
+                if (selectedStatus === 'confirmed' || selectedStatus === 'pending') {
+                    warehouseContainer.show();
+                    
+                    // Only reload warehouses if changing to confirmed (in case inventory changed)
+                    if (selectedStatus === 'confirmed') {
+                        loadWarehousesForVariant(data.pb_variant_id, quantity, data.pb_warehouse_id);
+                    }
+                } else {
+                    warehouseContainer.hide();
+                }
+            });
+            
+            // Trigger the status change handler initially
+            $('#edit-status').trigger('change');
+            
+            // Load warehouses with inventory information for the variant
+            loadWarehousesForVariant(data.pb_variant_id, quantity, data.pb_warehouse_id);
+            
             // Show the modal
             $('#editProductBookingModal').modal('show');
         },
@@ -1081,6 +1117,71 @@ function addTechnicianBadge(techId, techName, notes = '') {
     techList.append(badge);
 }
 
+// Load warehouses with inventory information for a specific variant and quantity
+function loadWarehousesForVariant(variantId, quantity, currentWarehouseId) {
+    const warehouseSelect = $('#edit-warehouse-id');
+    warehouseSelect.empty();
+    warehouseSelect.append(`<option value="auto" selected>Auto-select warehouse (Default)</option>`);
+    
+    // Show loading indicator
+    warehouseSelect.prop('disabled', true);
+    warehouseSelect.append(`<option disabled>Loading warehouses...</option>`);
+    
+    $.ajax({
+        url: '/api/inventory/variant-warehouses',
+        method: 'GET',
+        data: {
+            variant_id: variantId,
+            quantity: quantity
+        },
+        success: function(response) {
+            warehouseSelect.empty();
+            warehouseSelect.append(`<option value="auto">Auto-select warehouse (Default)</option>`);
+            
+            // If no warehouses have enough inventory, disable the auto option
+            let anyWarehouseHasEnough = false;
+            
+            if (response.data && response.data.length > 0) {
+                response.data.forEach(warehouse => {
+                    const hasEnough = warehouse.available_quantity >= quantity;
+                    anyWarehouseHasEnough = anyWarehouseHasEnough || hasEnough;
+                    
+                    const option = $(`<option value="${warehouse.whouse_id}" ${!hasEnough ? 'disabled' : ''}>${warehouse.whouse_name} (Available: ${warehouse.available_quantity})</option>`);
+                    warehouseSelect.append(option);
+                    
+                    // If this is the current warehouse, select it
+                    if (currentWarehouseId && warehouse.whouse_id == currentWarehouseId) {
+                        option.prop('selected', true);
+                    }
+                });
+            } else {
+                warehouseSelect.append(`<option disabled>No warehouses found</option>`);
+            }
+            
+            // If no warehouse has enough inventory, disable the auto option
+            if (!anyWarehouseHasEnough) {
+                warehouseSelect.find('option[value="auto"]').prop('disabled', true)
+                    .text('Auto-select warehouse (No warehouse has enough inventory)');
+            } else {
+                // If we don't have a selected warehouse already, select auto
+                if (!currentWarehouseId) {
+                    warehouseSelect.find('option[value="auto"]').prop('selected', true);
+                }
+            }
+            
+            warehouseSelect.prop('disabled', false);
+        },
+        error: function(xhr) {
+            warehouseSelect.empty();
+            warehouseSelect.append(`<option value="auto" selected>Auto-select warehouse (Default)</option>`);
+            warehouseSelect.append(`<option disabled>Error loading warehouses</option>`);
+            warehouseSelect.prop('disabled', false);
+            
+            console.error("Error loading warehouses:", xhr);
+        }
+    });
+}
+
 // Save product booking changes
 function saveProductBooking() {
     const bookingId = $('#edit-id').val();
@@ -1088,6 +1189,7 @@ function saveProductBooking() {
     const priceType = $('#edit-price-type').val();
     const preferredDate = $('#edit-delivery-date').val();
     const preferredTime = $('#edit-delivery-time').val();
+    const warehouseId = $('#edit-warehouse-id').val();
     
     // Get unit price from the hidden field (set by updateTotalAmount function)
     const unitPrice = parseFloat($('#edit-unit-price').val() || 0);
@@ -1122,6 +1224,11 @@ function saveProductBooking() {
         preferredTime: preferredTime,
         technicians: techniciansData
     };
+    
+    // Only include warehouse ID if it's not 'auto'
+    if (warehouseId && warehouseId !== 'auto') {
+        updateData.warehouseId = warehouseId;
+    }
     
     // If we have description field, include it
     const description = $('#edit-description').val();

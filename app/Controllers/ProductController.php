@@ -1070,72 +1070,14 @@ class ProductController extends BaseController
             return;
         }
         
-        // Ensure inventoryModel is initialized
-        if (!isset($this->inventoryModel)) {
-            $this->inventoryModel = new \App\Models\InventoryModel();
-            error_log("InventoryModel was not initialized, created a new instance");
-        }
-        
         // Start transaction for safe updates
         $this->productBookingModel->beginTransaction();
         
         try {
-            // Get current booking details
+            // Get current booking details for reference
             $currentStatus = isset($booking['PB_STATUS']) ? $booking['PB_STATUS'] : (isset($booking['pb_status']) ? $booking['pb_status'] : '');
             $currentQuantity = isset($booking['PB_QUANTITY']) ? intval($booking['PB_QUANTITY']) : intval($booking['pb_quantity'] ?? 0);
             $variantId = isset($booking['PB_VARIANT_ID']) ? intval($booking['PB_VARIANT_ID']) : intval($booking['pb_variant_id'] ?? 0);
-            
-            // Check if quantity is changing
-            $newQuantity = isset($data['quantity']) ? intval($data['quantity']) : $currentQuantity;
-            $quantityDifference = $newQuantity - $currentQuantity;
-            
-            // Check if status is changing to confirmed
-            $statusChangingToConfirmed = false;
-            $newStatus = !empty($data['status']) ? $data['status'] : $currentStatus;
-            
-            if ($newStatus === 'confirmed' && $currentStatus !== 'confirmed') {
-                $statusChangingToConfirmed = true;
-                error_log("Status changing from {$currentStatus} to confirmed");
-                
-                // If status is changing to confirmed, need to check inventory
-                if (!$variantId || $newQuantity <= 0) {
-                    $this->productBookingModel->rollback();
-                    $this->jsonError('Invalid booking data: missing variant or invalid quantity', 500);
-                    return;
-                }
-                
-                // Check if there's enough inventory and reduce it
-                $inventoryReduced = $this->inventoryModel->reduceStock($variantId, $newQuantity);
-                error_log("Inventory reduction result for confirmation: " . ($inventoryReduced ? "Success" : "Failed"));
-                
-                if (!$inventoryReduced) {
-                    $this->productBookingModel->rollback();
-                    $this->jsonError('Insufficient inventory for this booking. Cannot confirm.', 400);
-                    return;
-                }
-                
-                error_log("Inventory successfully reduced for variant {$variantId}, quantity {$newQuantity} on booking confirmation");
-            }
-            // Handle quantity change for already confirmed bookings
-            else if ($currentStatus === 'confirmed' && $quantityDifference != 0 && !$statusChangingToConfirmed) {
-                error_log("Quantity changing from {$currentQuantity} to {$newQuantity} (difference: {$quantityDifference})");
-                
-                if ($quantityDifference > 0) {
-                    // Need more inventory
-                    $additionalQuantity = $quantityDifference;
-                    $inventoryReduced = $this->inventoryModel->reduceStock($variantId, $additionalQuantity);
-                    
-                    if (!$inventoryReduced) {
-                        $this->productBookingModel->rollback();
-                        $this->jsonError("Cannot increase quantity. Only have inventory for {$currentQuantity} units.", 400);
-                        return;
-                    }
-                    
-                    error_log("Additional inventory of {$additionalQuantity} units reduced for variant {$variantId}");
-                }
-                // If quantity is decreasing, we would need to add the excess back to inventory
-                // This could be implemented in a future update if needed
-            }
             
             // Prepare update data
             $updateData = [];
@@ -1168,6 +1110,11 @@ class ProductController extends BaseController
             
             if (!empty($data['description'])) {
                 $updateData['PB_DESCRIPTION'] = $data['description'];
+            }
+            
+            // Set warehouse ID if provided
+            if (!empty($data['warehouseId'])) {
+                $updateData['PB_WAREHOUSE_ID'] = $data['warehouseId'];
             }
             
             // Update the booking
