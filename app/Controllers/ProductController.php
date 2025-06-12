@@ -807,11 +807,18 @@ class ProductController extends BaseController
                 'PB_PRICE_TYPE' => $priceType,
                 'PB_PREFERRED_DATE' => $data['PB_PREFERRED_DATE'],
                 'PB_PREFERRED_TIME' => $data['PB_PREFERRED_TIME'],
-                'PB_ADDRESS' => $data['PB_ADDRESS']
+                'PB_ADDRESS' => $data['PB_ADDRESS'],
+                'PB_STATUS' => 'pending',
+                'PB_INVENTORY_DEDUCTED' => false
             ];
             
             // Handle description field - use default text if empty
             $bookingData['PB_DESCRIPTION'] = !empty($data['PB_DESCRIPTION']) ? $data['PB_DESCRIPTION'] : 'No additional instructions provided';
+            
+            // Handle warehouse field if provided (will be null by default)
+            if (!empty($data['PB_WAREHOUSE_ID'])) {
+                $bookingData['PB_WAREHOUSE_ID'] = $data['PB_WAREHOUSE_ID'];
+            }
             
             error_log("Creating booking with data: " . json_encode($bookingData));
             
@@ -1012,6 +1019,33 @@ class ProductController extends BaseController
             $booking['customer_profile_url'] = $booking['CUSTOMER_PROFILE_URL'];
         }
         
+        // Add warehouse information if a warehouse ID is specified
+        if (isset($booking['PB_WAREHOUSE_ID']) && !empty($booking['PB_WAREHOUSE_ID'])) {
+            $warehouseModel = new \App\Models\WarehouseModel();
+            $warehouse = $warehouseModel->getWarehouseById($booking['PB_WAREHOUSE_ID']);
+            
+            if ($warehouse) {
+                $booking['warehouse_name'] = isset($warehouse['WHOUSE_NAME']) ? $warehouse['WHOUSE_NAME'] : 
+                    (isset($warehouse['whouse_name']) ? $warehouse['whouse_name'] : 'Unknown');
+                $booking['warehouse_location'] = isset($warehouse['WHOUSE_LOCATION']) ? $warehouse['WHOUSE_LOCATION'] : 
+                    (isset($warehouse['whouse_location']) ? $warehouse['whouse_location'] : '');
+            }
+        } else if (isset($booking['pb_warehouse_id']) && !empty($booking['pb_warehouse_id'])) {
+            $warehouseModel = new \App\Models\WarehouseModel();
+            $warehouse = $warehouseModel->getWarehouseById($booking['pb_warehouse_id']);
+            
+            if ($warehouse) {
+                $booking['warehouse_name'] = isset($warehouse['WHOUSE_NAME']) ? $warehouse['WHOUSE_NAME'] : 
+                    (isset($warehouse['whouse_name']) ? $warehouse['whouse_name'] : 'Unknown');
+                $booking['warehouse_location'] = isset($warehouse['WHOUSE_LOCATION']) ? $warehouse['WHOUSE_LOCATION'] : 
+                    (isset($warehouse['whouse_location']) ? $warehouse['whouse_location'] : '');
+            }
+        }
+        
+        // Make sure inventory_deducted field is included in response
+        $booking['inventory_deducted'] = isset($booking['PB_INVENTORY_DEDUCTED']) ? (bool)$booking['PB_INVENTORY_DEDUCTED'] : 
+            (isset($booking['pb_inventory_deducted']) ? (bool)$booking['pb_inventory_deducted'] : false);
+        
         // Get assigned technicians for this booking
         $technicians = $this->productBookingModel->getAssignedTechnicians($id);
         
@@ -1169,10 +1203,14 @@ class ProductController extends BaseController
         $this->productBookingModel->beginTransaction();
         
         try {
-            // If booking was confirmed, we should add the inventory back
+            // Check if inventory was deducted for this booking
+            $inventoryDeducted = isset($booking['PB_INVENTORY_DEDUCTED']) ? (bool)$booking['PB_INVENTORY_DEDUCTED'] : 
+                (isset($booking['pb_inventory_deducted']) ? (bool)$booking['pb_inventory_deducted'] : false);
+            
             $status = isset($booking['PB_STATUS']) ? $booking['PB_STATUS'] : (isset($booking['pb_status']) ? $booking['pb_status'] : '');
             
-            if ($status === 'confirmed') {
+            // If booking was confirmed and inventory was deducted, we should add the inventory back
+            if ($status === 'confirmed' && $inventoryDeducted) {
                 // Get variant ID and quantity
                 $variantId = isset($booking['PB_VARIANT_ID']) ? intval($booking['PB_VARIANT_ID']) : intval($booking['pb_variant_id'] ?? 0);
                 $quantity = isset($booking['PB_QUANTITY']) ? intval($booking['PB_QUANTITY']) : intval($booking['pb_quantity'] ?? 0);
@@ -1185,22 +1223,28 @@ class ProductController extends BaseController
                     
                     error_log("Adding back inventory for deleted booking - VariantID: {$variantId}, Quantity: {$quantity}");
                     
-                    // Add stock back to inventory as Regular type in the first warehouse
-                    // You might want to enhance this logic to determine which warehouse to add to
-                    $warehouseModel = new \App\Models\WarehouseModel();
-                    $warehouses = $warehouseModel->getAllWarehouses();
+                    // First try to use the warehouse ID from the booking if available
+                    $warehouseId = isset($booking['PB_WAREHOUSE_ID']) ? $booking['PB_WAREHOUSE_ID'] : 
+                        (isset($booking['pb_warehouse_id']) ? $booking['pb_warehouse_id'] : null);
                     
-                    if (!empty($warehouses)) {
-                        $warehouseId = isset($warehouses[0]['WHOUSE_ID']) ? $warehouses[0]['WHOUSE_ID'] : (isset($warehouses[0]['whouse_id']) ? $warehouses[0]['whouse_id'] : null);
+                    // If no warehouse ID is specified in the booking, fall back to the first warehouse
+                    if (!$warehouseId) {
+                        $warehouseModel = new \App\Models\WarehouseModel();
+                        $warehouses = $warehouseModel->getAllWarehouses();
                         
-                        if ($warehouseId) {
-                            $stockAdded = $this->inventoryModel->addStock($variantId, $warehouseId, $quantity, 'Regular');
-                            error_log("Inventory restoration result: " . ($stockAdded ? "Success" : "Failed"));
-                            
-                            if (!$stockAdded) {
-                                error_log("Failed to restore inventory for variant {$variantId} with quantity {$quantity}");
-                                // Continue with deletion even if inventory restoration fails
-                            }
+                        if (!empty($warehouses)) {
+                            $warehouseId = isset($warehouses[0]['WHOUSE_ID']) ? $warehouses[0]['WHOUSE_ID'] : 
+                                (isset($warehouses[0]['whouse_id']) ? $warehouses[0]['whouse_id'] : null);
+                        }
+                    }
+                    
+                    if ($warehouseId) {
+                        $stockAdded = $this->inventoryModel->addStock($variantId, $warehouseId, $quantity, 'Regular');
+                        error_log("Inventory restoration result: " . ($stockAdded ? "Success" : "Failed"));
+                        
+                        if (!$stockAdded) {
+                            error_log("Failed to restore inventory for variant {$variantId} with quantity {$quantity}");
+                            // Continue with deletion even if inventory restoration fails
                         }
                     }
                 }

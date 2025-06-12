@@ -115,7 +115,9 @@ class ProductBookingModel extends Model
                     PB_PREFERRED_DATE, 
                     PB_PREFERRED_TIME, 
                     PB_ADDRESS,
-                    PB_DESCRIPTION
+                    PB_DESCRIPTION,
+                    PB_WAREHOUSE_ID,
+                    PB_INVENTORY_DEDUCTED
                 ) VALUES (
                     :customer_id, 
                     :variant_id, 
@@ -126,7 +128,9 @@ class ProductBookingModel extends Model
                     :preferred_date, 
                     :preferred_time, 
                     :address,
-                    :description
+                    :description,
+                    :warehouse_id,
+                    :inventory_deducted
                 )";
         
         $params = [
@@ -139,7 +143,9 @@ class ProductBookingModel extends Model
             ':preferred_date' => $data['PB_PREFERRED_DATE'],
             ':preferred_time' => $data['PB_PREFERRED_TIME'],
             ':address' => $data['PB_ADDRESS'],
-            ':description' => $data['PB_DESCRIPTION'] ?? null
+            ':description' => $data['PB_DESCRIPTION'] ?? null,
+            ':warehouse_id' => $data['PB_WAREHOUSE_ID'] ?? null,
+            ':inventory_deducted' => $data['PB_INVENTORY_DEDUCTED'] ?? false
         ];
         
         $this->execute($sql, $params);
@@ -149,6 +155,7 @@ class ProductBookingModel extends Model
     // Update a product booking status
     public function updateBookingStatus($bookingId, $status)
     {
+        // Do not manually set PB_INVENTORY_DEDUCTED as it will be handled by the database trigger
         $sql = "UPDATE {$this->table} SET 
                 PB_STATUS = :status,
                 PB_UPDATED_AT = CURRENT_TIMESTAMP
